@@ -182,14 +182,18 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
     scroll();
   }
 
+  // AI につながらないとき・AI を使わない設定のとき。答えを推し量って選ばず、近い「よくある質問」を出して、押されたものだけ答える
   function local(q) {
-    // 選んだ助成金の名前も足して探す（「受付期間は？」だけでも、その助成金の答えが上に来るように）
+    // 選んだ助成金の名前も足して探す（その助成金の質問が上に来るように）
     const r = rank(cfg, topic ? `${q} ${topic.short}` : q).filter((x) => !cfg.faq[x.i].t || (topic && cfg.faq[x.i].t === topic.id));
-    const top = r[0];
-    if (!top || top.s < 1.2) { say(cfg.fallback, "bot"); contact(); return; }
-    const f = cfg.faq[top.i];
-    say(f.a, "bot", f.src);
-    chips(r.slice(1, 4).filter((x) => x.s >= 1.2).map((x) => cfg.faq[x.i].q));
+    const near = r.filter((x) => x.s >= 1.2).slice(0, 3);
+    say(cfg.offline || cfg.fallback, "bot");
+    if (near.length) {
+      const c = el("div", "chips");
+      for (const x of near) { const f = cfg.faq[x.i], b = el("button", "", f.q); b.type = "button"; b.onclick = () => { say(f.q, "you"); say(f.a, "bot", f.src); }; c.append(b); }
+      log.append(c);
+    }
+    contact();
   }
 
   async function ai(q) {

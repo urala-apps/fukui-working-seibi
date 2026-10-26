@@ -104,11 +104,17 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
 @keyframes pulse{50%{box-shadow:0 0 0 6px #d9473a33}}
 @media (prefers-reduced-motion:reduce){form button.mic.on{animation:none}}
 .foot{padding:0 12px 8px;font-size:11px;color:var(--mut)}
+/* 選んでいる助成金（topics がある設定だけ）。「選び直す」で最初から */
+.topic{display:flex;align-items:center;gap:8px;padding:7px 14px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink)}
+.topic[hidden]{display:none}
+.topic span{flex:1;min-width:0;font-weight:700}
+.topic button{flex:none;border:1.5px solid var(--c);background:var(--bg);color:var(--c);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer}
 @media (max-width:480px){.panel{right:0;bottom:0;width:100vw;max-width:100vw;height:100%;max-height:100%;border-radius:0}}
 </style>
 <button class="btn" type="button" aria-haspopup="dialog" aria-label="AIに質問する">${CH("ch")}<span class="tx" aria-hidden="true"><span>A</span><span>I</span><span>に</span><span>質</span><span>問</span><span>す</span><span>る</span></span></button>
 <div class="panel" role="dialog" aria-modal="false" hidden>
   <header>${CH("ch")}<b></b><button type="button" class="x" aria-label="閉じる">×</button></header>
+  <div class="topic" hidden><span></span><button type="button" class="re">選び直す</button></div>
   <div class="log" aria-live="polite"></div>
   <form><input type="text" maxlength="300" placeholder="ご質問を入力" aria-label="ご質問"><button type="button" class="mic" aria-label="音声で入力" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg></button><button type="submit">送信</button></form>
   <div class="foot"></div>
@@ -119,6 +125,8 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
   const scroll = () => { log.scrollTop = log.scrollHeight; };
 
   let cfg = null, started = false, busy = false;
+  // 設定に topics（助成金など）があるときは、最初にどれの話かを選んでもらい、その資料だけで答える
+  let topic = null;
   // 会話ごとのランダムな番号（記録で同じ人の一連の会話をまとめるため。名前などは送らない）
   const session = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
   const history = [];
@@ -142,6 +150,26 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
     for (const q of list) { const b = el("button", "", q); b.type = "button"; b.onclick = () => ask(q); c.append(b); }
     log.append(c); scroll();
   }
+  function topicChips() {
+    const c = el("div", "chips");
+    for (const t of cfg.topics) { const b = el("button", "", t.name); b.type = "button"; b.onclick = () => choose(t); c.append(b); }
+    log.append(c); scroll();
+  }
+  function choose(t) {
+    if (busy) return;
+    topic = t; history.length = 0;
+    $(".topic span").textContent = "選択中：" + t.name; $(".topic").hidden = false;
+    say(t.name, "you");
+    say(`${t.name}についてお答えします。ご質問をどうぞ。`, "bot");
+    chips(cfg.starters || []);
+    input.focus();
+  }
+  function rechoose() {
+    if (busy) return;
+    topic = null; history.length = 0; $(".topic").hidden = true;
+    say(cfg.choose || "どれについてのご質問ですか？", "bot"); topicChips();
+  }
+
   function contact() {
     const box = el("div", "links");
     for (const l of cfg.contact || []) {
@@ -155,7 +183,8 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
   }
 
   function local(q) {
-    const r = rank(cfg, q);
+    // 選んだ助成金の名前も足して探す（「受付期間は？」だけでも、その助成金の答えが上に来るように）
+    const r = rank(cfg, topic ? `${q} ${topic.short}` : q).filter((x) => !cfg.faq[x.i].t || (topic && cfg.faq[x.i].t === topic.id));
     const top = r[0];
     if (!top || top.s < 1.2) { say(cfg.fallback, "bot"); contact(); return; }
     const f = cfg.faq[top.i];
@@ -169,7 +198,7 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
     wait.append(wm); scroll();
     try {
       const res = await fetch(`${cfg.api}?bot=${id}`, { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bot: id, session, messages: history.slice(-12) }) });
+        body: JSON.stringify({ bot: id, session, topic: topic ? topic.id : undefined, messages: history.slice(-12) }) });
       const j = await res.json().catch(() => ({}));
       wait.remove();
       if (!res.ok || !j.answer) { local(q); return; }
@@ -184,6 +213,7 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
   async function ask(q) {
     q = String(q || "").trim().slice(0, 300);
     if (!q || busy) return;
+    if (cfg.topics && !topic) { say(q, "you"); say(cfg.choose || "先に、どれについてのご質問かを選んでください。", "bot"); topicChips(); return; }
     busy = true; send.disabled = true;
     say(q, "you");
     history.push({ role: "user", content: q });
@@ -201,7 +231,7 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
       $("header b").textContent = cfg.title || "ご質問";
       $(".foot").textContent = cfg.notice || "";
     }
-    if (!started) { started = true; say(cfg.greeting, "bot"); chips(cfg.starters || []); }
+    if (!started) { started = true; say(cfg.greeting, "bot"); if (cfg.topics) topicChips(); else chips(cfg.starters || []); }
     input.focus();
   }
   function close() { if (rec) rec.abort(); panel.hidden = true; btn.hidden = false; btn.focus(); }
@@ -233,6 +263,7 @@ form button.mic.on{background:#d9473a;border-color:#d9473a;color:#fff;animation:
 
   btn.onclick = open;
   $(".x").onclick = close;
+  $(".re").onclick = rechoose;
   panel.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
   form.onsubmit = (e) => { e.preventDefault(); if (rec) rec.abort(); const q = input.value; input.value = ""; ask(q); };
   if (me.dataset.color) host.style.setProperty("--c", me.dataset.color);

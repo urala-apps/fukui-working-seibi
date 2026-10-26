@@ -76,6 +76,7 @@ ${list}
 
 窓口へ回すとき（handoff）
 - 資料にないことは推測で答えない。まず、聞き返せば資料の範囲で答えられないかを考え、できるなら聞き返す
+- ほかの助成金との併用など、資料に書かれていないことを「できる可能性がある」「できると思われる」のように言わない。資料に記載がないと伝えて、事務局へ案内する
 - 資料に名前が出てこない経費・研修・サービスなどを、対象・対象外と言い切らない。資料の基準を示し、それを確かめる聞き返しをする
 - 聞き返しても資料に答えがないとき、または個別の案件が対象になるか・交付されるかの判断になるときだけ、そのことを伝えて「下のボタンから事務局へ」と案内し、handoff を true にする。それ以外は false
 
@@ -105,18 +106,22 @@ ${(bot.knowledge ?? []).filter((f) => files.has(f)).map((f) => `<document name="
   return v;
 }
 
-// 会話に出てきた助成金を探す。新しい発言から順に見て、最初に見つかった発言のものを使う
+// 会話に出てきた助成金を探す。相手の発言を新しい順に見て、最初に見つかった発言のものを使う
 // （「それの締め切りは？」のように名前を言わない質問でも、前の話題を引き継ぐ）
+// AI の発言は聞き返しの例などで名前が混ざりやすいので、相手の発言に見つからないときだけ直前の1つを見て、
+// 1つの助成金だけが出てくるとき（「それなら○○が合います」など）に限って使う
 const norm = (s: string) => s.normalize("NFKC").toLowerCase().replace(/\s/g, "");
 function pickTopics(topics: Topic[], msgs: { role: string; content: string }[]) {
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const t = norm(msgs[i].content);
-    const hit = topics.filter((tp) => [tp.name, tp.short, ...tp.keys].some((k) => t.includes(norm(k))));
+  const find = (s: string) => topics.filter((tp) => [tp.name, tp.short, ...tp.keys].some((k) => norm(s).includes(norm(k))));
+  for (const m of msgs.filter((m) => m.role === "user").reverse()) {
+    const hit = find(m.content);
     if (!hit.length) continue;
     // 一覧のように多く出てきた発言は、どれか1つの話ではないので詳しい資料は渡さない
     return hit.length <= 3 ? hit : [];
   }
-  return [];
+  const last = msgs.findLast((m) => m.role === "assistant");
+  const hit = last ? find(last.content) : [];
+  return hit.length === 1 ? hit : [];
 }
 
 function cors(origin: string) {

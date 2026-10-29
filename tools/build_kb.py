@@ -7,7 +7,9 @@ MASK=[("0776-20-0390","（記入例の電話番号）"),("rousei@pref.fukui.lg.j
 def label(fn):
     b=fn
     for k,v in [("交付事務マニュアル","交付事務マニュアル"),("交付要領","交付要領"),("支給要綱","支給要綱"),("チラシ","チラシ"),("Ｑ＆Ａ","Q&A"),("チェックリスト","提出書類チェックリスト"),("計算シート","補助対象経費計算シート")]:
-        if k in b: return ("記載例 " if "記載例" in b else "")+v
+        if k in b:
+            kind = re.search(r"（[^）]*型）", b)  # 「チラシ（一般型）」「チラシ（その他型）」のように種類があれば残す
+            return ("記載例 " if "記載例" in b else "")+v+(kind.group(0) if kind else "")
     m=re.search(r"様式[第]?\s*([0-9０-９１-９・]+)",b)
     name=re.sub(r"^[0-9_ ]+","",b)
     name=re.sub(r"[（(]R8[^）)]*[）)]|R8_?|v$","",name).strip()
